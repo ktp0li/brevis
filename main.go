@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -16,7 +17,7 @@ type Entry struct {
 	URL  string
 }
 
-func GenerateLink() string {
+func generateLink() string {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 	const zero, z = 48, 122 // ASCII
@@ -36,7 +37,7 @@ func GenerateLink() string {
 	return strings.Join(stroke[:], "")
 }
 
-func Connect() *sql.DB {
+func connect() *sql.DB {
 	db, err := sql.Open("sqlite3", "urls.db")
 	if err != nil {
 		log.Fatal(err)
@@ -45,7 +46,10 @@ func Connect() *sql.DB {
 	return db
 }
 
-func CreateDB(db *sql.DB) {
+func createDB() {
+	db := connect()
+	defer db.Close()
+
 	statement, err := db.Prepare("CREATE TABLE IF NOT EXISTS url (id INTEGER PRIMARY KEY, link TEXT NOT NULL UNIQUE, url TEXT NOT NULL)")
 	if err != nil {
 		log.Fatal(err)
@@ -55,24 +59,36 @@ func CreateDB(db *sql.DB) {
 	statement.Exec()
 }
 
-func AddEntry(db *sql.DB, entry Entry) {
+func addEntry(entry Entry) {
+	db := connect()
+	defer db.Close()
+
 	statement, _ := db.Prepare("INSERT INTO url (link, url) VALUES (?, ?)")
 	statement.Exec(entry.Link, entry.URL)
 	log.Printf("Inserted %s into database!", entry.URL)
 }
 
-func RedirectTo(mux *http.ServeMux) {
-	mux.Handle("/", http.RedirectHandler("https://ktp0li.su", http.StatusSeeOther))
+func redirectTo(w http.ResponseWriter, r *http.Request) {
+	db := connect()
+	defer db.Close()
+
+	var url string
+
+	if r.URL.Path != "/" {
+		db.QueryRow("SELECT url FROM url WHERE link = ?", r.URL.Path[1:]).Scan(&url)
+		http.Redirect(w, r, url, http.StatusSeeOther)
+	} else {
+		fmt.Fprintf(w, "pupupu")
+	}
 }
 
 func main() {
-	db := Connect()
-	defer db.Close()
-
-	CreateDB(db)
-	AddEntry(db, Entry{"puk11", "kak"})
+	createDB()
+	addEntry(Entry{"puk11", "kak"})
+	addEntry(Entry{"poli", "https://ktp0li.su"})
 
 	mux := http.NewServeMux()
-	http.ListenAndServe(":8080", mux)
-	RedirectTo(mux)
+
+	mux.HandleFunc("/", redirectTo)
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
