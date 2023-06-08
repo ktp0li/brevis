@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -59,36 +60,46 @@ func createDB() {
 	statement.Exec()
 }
 
-func addEntry(entry Entry) {
-	db := connect()
-	defer db.Close()
+func addEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		db := connect()
+		defer db.Close()
 
-	statement, _ := db.Prepare("INSERT INTO url (link, url) VALUES (?, ?)")
-	statement.Exec(entry.Link, entry.URL)
-	log.Printf("Inserted %s into database!", entry.URL)
+		var entry Entry
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewDecoder(r.Body).Decode(&entry)
+		entry.Link = generateLink()
+
+		statement, _ := db.Prepare("INSERT INTO url (link, url) VALUES (?, ?)")
+		statement.Exec(entry.Link, entry.URL)
+		log.Printf("Inserted %s into database!", entry.URL)
+
+		json.NewEncoder(w).Encode(entry)
+	}
 }
 
 func redirectTo(w http.ResponseWriter, r *http.Request) {
-	db := connect()
-	defer db.Close()
+	if r.Method == http.MethodGet {
+		db := connect()
+		defer db.Close()
 
-	var url string
+		var url string
 
-	if r.URL.Path != "/" {
-		db.QueryRow("SELECT url FROM url WHERE link = ?", r.URL.Path[1:]).Scan(&url)
-		http.Redirect(w, r, url, http.StatusSeeOther)
-	} else {
-		fmt.Fprintf(w, "pupupu")
+		if r.URL.Path != "/" {
+			db.QueryRow("SELECT url FROM url WHERE link = ?", r.URL.Path[1:]).Scan(&url)
+			http.Redirect(w, r, url, http.StatusSeeOther)
+		} else {
+			fmt.Fprintf(w, "pupupu")
+		}
 	}
 }
 
 func main() {
 	createDB()
-	addEntry(Entry{"puk11", "kak"})
-	addEntry(Entry{"poli", "https://ktp0li.su"})
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/add", addEntry)
 	mux.HandleFunc("/", redirectTo)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
